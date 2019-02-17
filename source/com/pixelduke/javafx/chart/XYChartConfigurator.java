@@ -8,33 +8,33 @@ import javafx.geometry.Dimension2D;
 import javafx.geometry.Point2D;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.chart.Chart;
 import javafx.scene.chart.ValueAxis;
 import javafx.scene.chart.XYChart;
+import javafx.scene.chart.XYChart.Series;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 
-public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
-	public static final MouseMode DEFAULT_MOUSE_MODE = MouseMode.ZOOM;
+public class XYChartConfigurator {
 
-	ValueAxis xAxis;
-	ValueAxis yAxis;
+	private ValueAxis xAxis;
+	private ValueAxis yAxis;
 
-	Group chartGroup;
-	Rectangle zoomRectangle;
+	private Rectangle zoomRectangle;
+	private Group group;
 
-	XYChart chart;
+	private XYChart chart;
 
-	AxisConstraint axisConstraint = AxisConstraint.Horicontal;
+	private long interval = 0;
 
-	private SimpleObjectProperty<MouseMode> mouseModeProperty = new SimpleObjectProperty<>();
+	private AxisConstraint axisConstraint = AxisConstraint.Horizontal;
 
-	SimpleBooleanProperty isZoomingEnabled = new SimpleBooleanProperty(true);
+	private SimpleObjectProperty<MouseMode> mouseModeProperty = new SimpleObjectProperty<MouseMode>();
 
-	boolean isAxisValuesVisible;
-	int tempMinorTickCount;
+	private SimpleBooleanProperty isZoomingEnabled = new SimpleBooleanProperty(true);
 
 	// temporary variables used with zooming
 	double initialMouseX;
@@ -45,32 +45,23 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 	double lastMouseDragX;
 	double lastMouseDragY;
 
-	double startingXLowerBounds;
-	double startingXUpperBounds;
-	double startingYLowerBounds;
-	double startingYUpperBounds;
-
 	Cursor previousMouseCursor;
 
 	boolean isShowingOnlyYPositiveValues;
 	private boolean isVerticalPanningAllowed;
 
-	public ZoomableXYChart(XYChart chart) {
+	public XYChartConfigurator(XYChart chart) {
 		this.chart = chart;
-		isAxisValuesVisible = true;
-		isShowingOnlyYPositiveValues = false;
-		isVerticalPanningAllowed = true;
 
 		xAxis = (ValueAxis) chart.getXAxis();
 		yAxis = (ValueAxis) chart.getYAxis();
 
 		setupZoom();
-		setMouseMode(DEFAULT_MOUSE_MODE);
 	}
 
-	@Override
-	public Group getNodeRepresentation() {
-		return chartGroup;
+	public Node getNodeRepresentation() {
+//		return chartGroup;
+		return group;
 	}
 
 	public XYChart getChart() {
@@ -93,13 +84,21 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 	private void setupZoom() {
 		zoomRectangle = createZoomRectangle();
 
+		group = new Group();
+		group.getStylesheets()
+				.add(getClass().getResource("/com/pixelduke/javafx/styles/chartStyles.css").toExternalForm());
+		group.getChildren().add(zoomRectangle);
+
+		zoomRectangle.getStyleClass().add("zoom-rectangle");
+
 		zoomRectangle.setVisible(false);
-		chartGroup = new Group();
-		chartGroup.getChildren().addAll(zoomRectangle, chart);
+//		chartGroup = new Group();
+//		chartGroup.getChildren().addAll(zoomRectangle, chart);
 
 		chart.setOnMousePressed(new EventHandler<MouseEvent>() {
 			@Override
 			public void handle(MouseEvent mouseEvent) {
+				setMouseMode(mouseEvent);
 				previousMouseCursor = chart.getCursor();
 
 				initialMouseX = mouseEvent.getX();
@@ -111,14 +110,14 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 				lastMouseDragY = initialMouseSceneY;
 
 				if (mouseModeProperty.get() == MouseMode.ZOOM) {
-					setChartCursor(Cursor.CROSSHAIR);
 					if (axisConstraint == AxisConstraint.Vertical)
-						zoomRectangle.setX(0);
+						zoomRectangle.setX(0);// TODO not handled yet
 					else
-						zoomRectangle.setX(initialMouseSceneX);
-					if (axisConstraint == AxisConstraint.Horicontal)
-						zoomRectangle.setY(0);
-					else
+						zoomRectangle.setX(initialMouseX);
+					if (axisConstraint == AxisConstraint.Horizontal) {
+						setChartCursor(Cursor.W_RESIZE);
+						zoomRectangle.setY(chart.getHeight() - xAxis.boundsInParentProperty().getValue().getMaxY() - 4);
+					} else
 						zoomRectangle.setY(initialMouseY);
 				} else if (mouseModeProperty.get() == MouseMode.PAN) {
 					setChartCursor(Cursor.CLOSED_HAND);
@@ -145,7 +144,7 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 					else
 						zoomRectangle.setWidth(mouseSceneX - initialMouseSceneX);
 
-					if (axisConstraint == AxisConstraint.Horicontal)
+					if (axisConstraint == AxisConstraint.Horizontal)
 						zoomRectangle.setHeight(yAxis.getHeight());
 					else
 						zoomRectangle.setHeight(mouseSceneY - initialMouseSceneY);
@@ -169,6 +168,7 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 							yAxis.setUpperBound(newYUpperBound < 0 ? 0 : newYUpperBound);
 						}
 					}
+					stayInHorizontalBounds();
 				}
 			}
 		});
@@ -176,48 +176,31 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 		chart.setOnMouseReleased(new EventHandler<MouseEvent>() {
 			@Override
 			public void handle(MouseEvent mouseEvent) {
+				setChartCursor(previousMouseCursor);
 				if (mouseModeProperty.get() != MouseMode.ZOOM)
 					return;
 
 				zoomRectangle.setVisible(false);
-				setChartCursor(previousMouseCursor);
 
 				double newMouseX = mouseEvent.getSceneX();
 				double newMouseY = mouseEvent.getSceneY();
 
-				if (newMouseX < initialMouseSceneX && newMouseY < initialMouseSceneY) // zoom out
-				{
-					if (!(startingXLowerBounds == 0 && startingYLowerBounds == 0 && startingXUpperBounds == 0
-							&& startingYUpperBounds == 0)) {
-						xAxis.setLowerBound(startingXLowerBounds);
-						xAxis.setUpperBound(startingXUpperBounds);
-						yAxis.setLowerBound(startingYLowerBounds);
-						yAxis.setUpperBound(startingYUpperBounds);
-						startingXLowerBounds = 0;
-						startingXUpperBounds = 0;
-						startingYLowerBounds = 0;
-						startingYUpperBounds = 0;
-					}
-				} else if (newMouseX > initialMouseSceneX && newMouseY > initialMouseSceneY) // zoom in
-				{
+				if (newMouseX < initialMouseSceneX) {
+					zoomOut();
+				}
+
+				else if (newMouseX > initialMouseSceneX && axisConstraint == AxisConstraint.Horizontal) {
+					// zoom in horizontally
 					setAutoRanging(false);
 
 					double[] newLower = sceneToChartValues(initialMouseSceneX, newMouseY);
 					double[] newUpper = sceneToChartValues(newMouseX, initialMouseSceneY);
 
-					if (startingXLowerBounds == 0 && startingYLowerBounds == 0 && startingXUpperBounds == 0
-							&& startingYUpperBounds == 0) {
-						startingXLowerBounds = xAxis.getLowerBound();
-						startingXUpperBounds = xAxis.getUpperBound();
-						startingYLowerBounds = yAxis.getLowerBound();
-						startingYUpperBounds = yAxis.getUpperBound();
-					}
-
 					if (axisConstraint != AxisConstraint.Vertical) {
 						xAxis.setLowerBound(newLower[0]);
 						xAxis.setUpperBound(newUpper[0]);
 					}
-					if (axisConstraint != AxisConstraint.Horicontal) {
+					if (axisConstraint != AxisConstraint.Horizontal) {
 						if (!isShowingOnlyYPositiveValues) {
 							yAxis.setLowerBound(newLower[1]);
 							yAxis.setUpperBound(newUpper[1]);
@@ -230,6 +213,49 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 
 			}
 		});
+	}
+
+	public void stayInHorizontalBounds() {
+		long oldestTime = getOldestTime();
+		long latestTime = getLatestTime();
+		if (xAxis.getLowerBound() < oldestTime)
+			xAxis.setLowerBound(oldestTime);
+		if (xAxis.getUpperBound() > latestTime)
+			xAxis.setUpperBound(latestTime);
+	}
+
+	public void zoomOut() {
+		xAxis.setLowerBound(getOldestTime());
+		xAxis.setUpperBound(getLatestTime());
+	}
+
+	private long getOldestTime() {
+		ObservableList<Series<Long, Number>> data = chart.getData();
+		if (data != null && data.size() >= 1 && data.get(0).getData().size() >= 1)
+			return data.get(0).getData().get(0).getXValue() - getInterval();
+		return System.currentTimeMillis();
+	}
+
+	private long getLatestTime() {
+		ObservableList<Series<Long, Number>> data = chart.getData();
+		if (data != null && data.size() >= 1 && data.get(0).getData().size() >= 1)
+			return data.get(0).getData().get(data.get(0).getData().size() - 1).getXValue() + getInterval();
+		return System.currentTimeMillis();
+	}
+
+	private long getInterval() {
+		if (isIntervalCalculated())
+			return interval;
+		ObservableList<Series<Long, Number>> data = chart.getData();
+		if (data != null && data.size() >= 1 && data.get(0).getData().size() >= 2) {
+			interval = data.get(0).getData().get(1).getXValue() - data.get(0).getData().get(0).getXValue();
+			return interval;
+		}
+		return 86400000l;
+	}
+
+	private boolean isIntervalCalculated() {
+		return interval != 0;
 	}
 
 	private double[] sceneToChartValues(double sceneX, double sceneY) {
@@ -274,6 +300,13 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 		return mouseModeProperty.get();
 	}
 
+	public void setMouseMode(MouseEvent event) {
+		if (event.isShortcutDown())
+			setMouseMode(MouseMode.PAN);
+		else
+			setMouseMode(MouseMode.ZOOM);
+	}
+
 	public void setMouseMode(MouseMode mode) {
 		if (mode == this.getMouseMode())
 			return;
@@ -293,36 +326,11 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 		return mouseModeProperty;
 	}
 
-	public void setIsAxisValuesShowing(boolean isShowing) {
-		isAxisValuesVisible = isShowing;
-		xAxis.setTickLabelsVisible(isAxisValuesVisible);
-		yAxis.setTickLabelsVisible(isAxisValuesVisible);
-		xAxis.setTickMarkVisible(isAxisValuesVisible);
-		yAxis.setTickMarkVisible(isAxisValuesVisible);
-
-		if (!isAxisValuesVisible) {
-			if (xAxis.getMinorTickCount() != 0)
-				tempMinorTickCount = xAxis.getMinorTickCount();
-
-			xAxis.setMinorTickCount(0);
-			yAxis.setMinorTickCount(0);
-		} else {
-			if (xAxis.getMinorTickCount() == 0 && tempMinorTickCount != 0) {
-				xAxis.setMinorTickCount(tempMinorTickCount);
-				yAxis.setMinorTickCount(tempMinorTickCount);
-			}
-		}
-	}
-
-	public boolean getIsAxisValuesShowing() {
-		return isAxisValuesVisible;
-	}
-
 	private void setAutoRanging(boolean isAutoRanging) {
 		if (axisConstraint == AxisConstraint.Both) {
 			xAxis.setAutoRanging(isAutoRanging);
 			yAxis.setAutoRanging(isAutoRanging);
-		} else if (axisConstraint == AxisConstraint.Horicontal)
+		} else if (axisConstraint == AxisConstraint.Horizontal)
 			xAxis.setAutoRanging(isAutoRanging);
 		else if (axisConstraint == AxisConstraint.Vertical)
 			yAxis.setAutoRanging(isAutoRanging);
@@ -344,21 +352,6 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 		chart.setMaxHeight(size);
 	}
 
-	@Override
-	public ObservableList<XYChart.Series> getData() {
-		return chart.getData();
-	}
-
-	public void setData(ObservableList<XYChart.Series<X, Y>> data) {
-		setAutoRanging(true);
-		chart.setData(data);
-	}
-
-	@Override
-	public void setTitle(String title) {
-		chart.setTitle(title);
-	}
-
 	public void setChartCursor(Cursor cursor) {
 		Pane chartPane = (Pane) ReflectionUtils.forceFieldCall(Chart.class, "chartContent", chart);
 		chartPane.setCursor(cursor);
@@ -366,9 +359,5 @@ public class ZoomableXYChart<X, Y> implements IChart<X, Y> {
 
 	public void setIsShowingOnlyYPositiveValues(boolean onlyYPositive) {
 		isShowingOnlyYPositiveValues = onlyYPositive;
-	}
-
-	public void setIsVerticalPanningAllowed(boolean isAllowed) {
-		isVerticalPanningAllowed = isAllowed;
 	}
 }

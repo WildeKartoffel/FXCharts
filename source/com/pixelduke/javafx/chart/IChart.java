@@ -15,7 +15,7 @@ import javafx.scene.chart.XYChart;
  */
 public interface IChart<X, Y> {
     XYChart getChart();
-    Group getNodeRepresentation();
+    Node getNodeRepresentation();
 
     void setPrefWidth(double size);
     void setPrefHeight(double size);

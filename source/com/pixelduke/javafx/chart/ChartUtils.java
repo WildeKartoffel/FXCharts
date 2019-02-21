@@ -98,7 +98,22 @@ public class ChartUtils {
 		((ValueAxis) chart.getXAxis()).setUpperBound(upperBoundWithinRange);
 	}
 
-	public static boolean isInRange(ValueAxis axis, double value) {
+	public static boolean isInXBounds(ValueAxis axis, double value) {
 		return axis.getLowerBound() <= value && axis.getUpperBound() >= value;
+	}
+
+	public static boolean isInXAndYBounds(XYChart chart, double xScene, double yScene) {
+		ValueAxis xAxis = (ValueAxis) chart.getXAxis();
+		ValueAxis yAxis = (ValueAxis) chart.getYAxis();
+		double[] mousePositionOnChart = ChartUtils.sceneToChartValues(xScene, yScene, xAxis, yAxis);
+		if (mousePositionOnChart[0] < xAxis.getLowerBound())
+			return false;
+		if (mousePositionOnChart[0] > xAxis.getUpperBound())
+			return false;
+		if (mousePositionOnChart[1] < yAxis.getLowerBound())
+			return false;
+		if (mousePositionOnChart[1] > yAxis.getUpperBound())
+			return false;
+		return true;
 	}
 }

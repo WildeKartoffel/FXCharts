@@ -51,8 +51,8 @@ public class DragZoomer {
 		double[] newUpper = ChartUtils.sceneToChartValues(newMouseX, initialMouseSceneY, config.getXAxis(),
 				config.getYAxis());
 
-		config.getXAxis().setLowerBound(newLower[0]);
-		config.getXAxis().setUpperBound(newUpper[0]);
+		ChartUtils.setLowerXBoundWithinRange(config.getChart(), newLower[0]);
+		ChartUtils.setUpperXBoundWithinRange(config.getChart(), newUpper[0]);
 	}
 
 	public void onMouseRelease(MouseEvent mouseEvent) {

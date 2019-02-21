@@ -22,12 +22,12 @@ public class XYChartConfigurator {
 	private MouseMode mouseMode = MouseMode.NO_MODE;
 	private Cursor previousCursor;
 
-	// dragZoom variables
 	private DragZoomer dragZoomer;
 	private MouseButton dragZoomBtn = MouseButton.PRIMARY;
 
-	// pan variables
 	private Panner panner;
+
+	private WheelZoomer wheelZoomer;
 
 	public XYChartConfigurator(XYChart chart) {
 		this.chart = chart;
@@ -41,6 +41,8 @@ public class XYChartConfigurator {
 		group.getChildren().add(dragZoomer.getNode());
 
 		panner = new Panner(this);
+
+		wheelZoomer = new WheelZoomer(this);
 	}
 
 	public Node getNodeRepresentation() {
@@ -118,36 +120,15 @@ public class XYChartConfigurator {
 
 	private void setupOnScroll() {
 		chart.setOnScroll(new EventHandler<ScrollEvent>() {
-
 			@Override
 			public void handle(ScrollEvent event) {
-				boolean isShortcutDown = event.isShortcutDown();
-				if (isInBounds(event.getX(), event.getY())) {
-					double[] d = ChartUtils.sceneToChartValues(event.getX(), event.getY(), xAxis, yAxis);
-					double mouseXDiffToLowerBound = d[0] - xAxis.getLowerBound();
-					double mouseXDiffToUpperBound = xAxis.getUpperBound() - d[0];
-
-					double zoomFactor = isShortcutDown ? 0.5 : 0.1;
-					double newLowerBound;
-					double newUpperBound;
-
-					if (event.getDeltaY() > 0) {
-						newLowerBound = xAxis.getLowerBound() + mouseXDiffToLowerBound * zoomFactor;
-						newUpperBound = xAxis.getUpperBound() - mouseXDiffToUpperBound * zoomFactor;
-					} else {
-						newLowerBound = xAxis.getLowerBound() - mouseXDiffToLowerBound * zoomFactor;
-						newUpperBound = xAxis.getUpperBound() + mouseXDiffToUpperBound * zoomFactor;
-					}
-					ChartUtils.setLowerXBoundWithinRange(chart, newLowerBound);
-					ChartUtils.setUpperXBoundWithinRange(chart, newUpperBound);
-				}
+				wheelZoomer.onScroll(event);
 			}
-
 		});
 	}
 
 	private void configureMouseModeAndCursorOnMousePress(MouseEvent event) {
-		if (!isInBounds(event.getX(), event.getY()))
+		if (!ChartUtils.isInXAndYBounds(chart, event.getX(), event.getY()))
 			mouseMode = MouseMode.NO_MODE;
 		else if (event.isShortcutDown())
 			mouseMode = MouseMode.PAN;
@@ -157,19 +138,6 @@ public class XYChartConfigurator {
 			mouseMode = MouseMode.NO_MODE;
 		storeLastCursor();
 		changeCursor();
-	}
-
-	private boolean isInBounds(double xScene, double yScene) {
-		double[] mousePositionOnChart = ChartUtils.sceneToChartValues(xScene, yScene, xAxis, yAxis);
-		if (mousePositionOnChart[0] < xAxis.getLowerBound())
-			return false;
-		if (mousePositionOnChart[0] > xAxis.getUpperBound())
-			return false;
-		if (mousePositionOnChart[1] < yAxis.getLowerBound())
-			return false;
-		if (mousePositionOnChart[1] > yAxis.getUpperBound())
-			return false;
-		return true;
 	}
 
 	private void storeLastCursor() {

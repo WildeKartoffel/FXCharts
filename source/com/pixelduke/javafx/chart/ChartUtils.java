@@ -97,4 +97,8 @@ public class ChartUtils {
 		double upperBoundWithinRange = Math.min(getLatestX(chart).doubleValue(), upperBound);
 		((ValueAxis) chart.getXAxis()).setUpperBound(upperBoundWithinRange);
 	}
+
+	public static boolean isInRange(ValueAxis axis, double value) {
+		return axis.getLowerBound() <= value && axis.getUpperBound() >= value;
+	}
 }

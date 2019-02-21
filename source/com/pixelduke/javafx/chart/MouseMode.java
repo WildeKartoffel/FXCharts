@@ -8,6 +8,7 @@ package com.pixelduke.javafx.chart;
  * To change this template use File | Settings | File Templates.
  */
 public enum MouseMode {
+	NO_MODE,
     PAN,
     ZOOM
 }

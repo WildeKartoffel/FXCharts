@@ -1,19 +1,14 @@
 package com.pixelduke.javafx.chart;
 
-import javafx.collections.ObservableList;
 import javafx.event.EventHandler;
-import javafx.geometry.Dimension2D;
-import javafx.geometry.Point2D;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
 import javafx.scene.Node;
-import javafx.scene.chart.Chart;
 import javafx.scene.chart.ValueAxis;
 import javafx.scene.chart.XYChart;
-import javafx.scene.chart.XYChart.Series;
+import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.Pane;
-import javafx.scene.shape.Rectangle;
+import javafx.scene.input.ScrollEvent;
 
 public class XYChartConfigurator {
 
@@ -24,28 +19,15 @@ public class XYChartConfigurator {
 
 	private XYChart chart;
 
-	private Number interval = 0;
+	private MouseMode mouseMode = MouseMode.NO_MODE;
+	private Cursor previousCursor;
 
-	private AxisConstraint axisConstraint = AxisConstraint.Horizontal;
-
-	private MouseMode mouseMode;
-
-	private Rectangle zoomRectangle;
+	// dragZoom variables
+	private DragZoomer dragZoomer;
 	private MouseButton dragZoomBtn = MouseButton.PRIMARY;
 
-	// temporary variables used with zooming
-	double initialMouseX;
-	double initialMouseY;
-	double initialMouseSceneX;
-	double initialMouseSceneY;
-
-	double lastMouseDragX;
-	double lastMouseDragY;
-
-	Cursor previousCursor;
-
-	boolean isShowingOnlyYPositiveValues;
-	private boolean isVerticalPanningAllowed;
+	// pan variables
+	private Panner panner;
 
 	public XYChartConfigurator(XYChart chart) {
 		this.chart = chart;
@@ -53,86 +35,37 @@ public class XYChartConfigurator {
 		xAxis = (ValueAxis) chart.getXAxis();
 		yAxis = (ValueAxis) chart.getYAxis();
 
-		setupZoom();
+		setup();
+
+		dragZoomer = new DragZoomer(this);
+		group.getChildren().add(dragZoomer.getNode());
+
+		panner = new Panner(this);
 	}
 
 	public Node getNodeRepresentation() {
 		return group;
 	}
 
-	public void setAxisConstraint(AxisConstraint axisConstraint) {
-		this.axisConstraint = axisConstraint;
+	public XYChart getChart() {
+		return chart;
 	}
 
-	public void stayInHorizontalMaximumBounds() {
-		double oldestTime = getOldestX().doubleValue();
-		double latestTime = getLatestX().doubleValue();
-		if (xAxis.getLowerBound() < oldestTime)
-			xAxis.setLowerBound(oldestTime);
-		if (xAxis.getUpperBound() > latestTime)
-			xAxis.setUpperBound(latestTime);
+	public ValueAxis getXAxis() {
+		return xAxis;
 	}
 
-	public void zoomOut() {
-		xAxis.setLowerBound(getOldestX().doubleValue());
-		xAxis.setUpperBound(getLatestX().doubleValue());
+	public ValueAxis getYAxis() {
+		return yAxis;
 	}
 
-	private void setupZoom() {
-		initializeNodes();
-
-		chart.setOnMousePressed(new EventHandler<MouseEvent>() {
-			@Override
-			public void handle(MouseEvent mouseEvent) {
-
-				configureMouseModeAndCursor(mouseEvent);
-				storeLastPositions(mouseEvent);
-
-				if (mouseMode == MouseMode.ZOOM) {
-					startDragZoom();
-				} else if (mouseMode == MouseMode.PAN) {
-					startPan();
-				}
-			}
-		});
-		chart.setOnMouseDragged(new EventHandler<MouseEvent>() {
-			@Override
-			public void handle(MouseEvent mouseEvent) {
-				double mouseSceneX = mouseEvent.getSceneX();
-				double mouseSceneY = mouseEvent.getSceneY();
-
-				if (mouseMode == MouseMode.ZOOM) {
-					updateZoomNode(mouseSceneX, mouseSceneY);
-				} else if (mouseMode == MouseMode.PAN) {
-					doDrag(mouseSceneX, mouseSceneY);
-				}
-			}
-		});
-
-		chart.setOnMouseReleased(new EventHandler<MouseEvent>() {
-			@Override
-			public void handle(MouseEvent mouseEvent) {
-				resetCursor();
-				if (mouseMode == MouseMode.ZOOM) {
-					zoomRectangle.setVisible(false);
-
-					double newMouseX = mouseEvent.getSceneX();
-					double newMouseY = mouseEvent.getSceneY();
-
-					if (newMouseX < initialMouseSceneX) {
-						zoomOut();
-					} else if (newMouseX > initialMouseSceneX && axisConstraint == AxisConstraint.Horizontal) {
-						zoomInHorizontally(newMouseX, newMouseY);
-					}
-				}
-			}
-		});
-	}
-
-	private void initializeNodes() {
+	private void setup() {
 		group = createGroup();
-		zoomRectangle = createZoomRectangle();
-		group.getChildren().add(zoomRectangle);
+
+		setupOnMousePress();
+		setupOnMouseDrag();
+		setupOnMouseRelease();
+		setupOnScroll();
 	}
 
 	private Group createGroup() {
@@ -142,153 +75,101 @@ public class XYChartConfigurator {
 		return group;
 	}
 
-	private Rectangle createZoomRectangle() {
-		final Rectangle zoomArea = new Rectangle();
-		zoomArea.getStyleClass().add("zoom-rectangle");
-		zoomArea.setVisible(false);
-		return zoomArea;
-	}
+	private void setupOnMousePress() {
+		chart.setOnMousePressed(new EventHandler<MouseEvent>() {
+			@Override
+			public void handle(MouseEvent mouseEvent) {
 
-	private void storeLastPositions(MouseEvent mouseEvent) {
-		initialMouseX = mouseEvent.getX();
-		initialMouseY = mouseEvent.getY();
-		initialMouseSceneX = mouseEvent.getSceneX();
-		initialMouseSceneY = mouseEvent.getSceneY();
+				configureMouseModeAndCursorOnMousePress(mouseEvent);
 
-		lastMouseDragX = initialMouseSceneX;
-		lastMouseDragY = initialMouseSceneY;
-	}
+				if (mouseMode == MouseMode.ZOOM)
+					dragZoomer.startDragZoom(mouseEvent);
+				else if (mouseMode == MouseMode.PAN)
+					panner.onMousePressed(mouseEvent);
 
-	private void startDragZoom() {
-		if (axisConstraint == AxisConstraint.Horizontal) {
-			zoomRectangle.setX(initialMouseX);
-			setChartCursor(Cursor.W_RESIZE);
-			zoomRectangle.setY(chart.getHeight() - xAxis.boundsInParentProperty().getValue().getMaxY() - 4);
-		}
-	}
-
-	private void startPan() {
-		setChartCursor(Cursor.CLOSED_HAND);
-	}
-
-	private void updateZoomNode(double newMouseX, double newMouseY) {
-		zoomRectangle.toFront();
-		zoomRectangle.setVisible(true);
-
-		if (axisConstraint == AxisConstraint.Vertical)
-			zoomRectangle.setWidth(xAxis.getWidth());
-		else
-			zoomRectangle.setWidth(newMouseX - initialMouseSceneX);
-
-		if (axisConstraint == AxisConstraint.Horizontal)
-			zoomRectangle.setHeight(yAxis.getHeight());
-		else
-			zoomRectangle.setHeight(newMouseY - initialMouseSceneY);
-	}
-
-	private void doDrag(double newMouseX, double newMouseY) {
-		double dragX = newMouseX - lastMouseDragX;
-		double dragY = newMouseY - lastMouseDragY;
-
-		lastMouseDragX = newMouseX;
-		lastMouseDragY = newMouseY;
-		setAutoRanging(false);
-
-		Dimension2D chartDrag = sceneToChartDistance(dragX, dragY);
-
-		xAxis.setLowerBound(xAxis.getLowerBound() - chartDrag.getWidth());
-		xAxis.setUpperBound(xAxis.getUpperBound() - chartDrag.getWidth());
-
-		if (isVerticalPanningAllowed) {
-			double newYLowerBound = yAxis.getLowerBound() + chartDrag.getHeight();
-			double newYUpperBound = yAxis.getUpperBound() + chartDrag.getHeight();
-
-			if (!isShowingOnlyYPositiveValues) {
-				yAxis.setLowerBound(newYLowerBound);
-				yAxis.setUpperBound(newYUpperBound);
-			} else {
-				yAxis.setLowerBound(newYLowerBound < 0 ? 0 : newYLowerBound);
-				yAxis.setUpperBound(newYUpperBound < 0 ? 0 : newYUpperBound);
 			}
-		}
-		stayInHorizontalMaximumBounds();
+		});
 	}
 
-	private void zoomInHorizontally(double newMouseX, double newMouseY) {
-		// zoom in horizontally
-		setAutoRanging(false);
-
-		double[] newLower = sceneToChartValues(initialMouseSceneX, newMouseY);
-		double[] newUpper = sceneToChartValues(newMouseX, initialMouseSceneY);
-
-		xAxis.setLowerBound(newLower[0]);
-		xAxis.setUpperBound(newUpper[0]);
+	private void setupOnMouseDrag() {
+		chart.setOnMouseDragged(new EventHandler<MouseEvent>() {
+			@Override
+			public void handle(MouseEvent mouseEvent) {
+				if (mouseMode == MouseMode.ZOOM) {
+					dragZoomer.onDrag(mouseEvent);
+				} else if (mouseMode == MouseMode.PAN) {
+					panner.onDrag(mouseEvent);
+				}
+			}
+		});
 	}
 
-	private Number getOldestX() {
-		ObservableList<Series<Number, Number>> data = chart.getData();
-		if (data != null && data.size() >= 1 && data.get(0).getData().size() >= 1)
-			return data.get(0).getData().get(0).getXValue().doubleValue() - getInterval().doubleValue();
-		return System.currentTimeMillis();
+	private void setupOnMouseRelease() {
+		chart.setOnMouseReleased(new EventHandler<MouseEvent>() {
+			@Override
+			public void handle(MouseEvent mouseEvent) {
+				resetCursor();
+				if (mouseMode == MouseMode.ZOOM) {
+					dragZoomer.onMouseRelease(mouseEvent);
+				}
+			}
+		});
 	}
 
-	private Number getLatestX() {
-		ObservableList<Series<Number, Number>> data = chart.getData();
-		if (data != null && data.size() >= 1 && data.get(0).getData().size() >= 1)
-			return data.get(0).getData().get(data.get(0).getData().size() - 1).getXValue().doubleValue()
-					+ getInterval().doubleValue();
-		return System.currentTimeMillis();
+	private void setupOnScroll() {
+		chart.setOnScroll(new EventHandler<ScrollEvent>() {
+
+			@Override
+			public void handle(ScrollEvent event) {
+				boolean isShortcutDown = event.isShortcutDown();
+				if (isInBounds(event.getX(), event.getY())) {
+					double[] d = ChartUtils.sceneToChartValues(event.getX(), event.getY(), xAxis, yAxis);
+					double mouseXDiffToLowerBound = d[0] - xAxis.getLowerBound();
+					double mouseXDiffToUpperBound = xAxis.getUpperBound() - d[0];
+
+					double zoomFactor = isShortcutDown ? 0.5 : 0.1;
+					double newLowerBound;
+					double newUpperBound;
+
+					if (event.getDeltaY() > 0) {
+						newLowerBound = xAxis.getLowerBound() + mouseXDiffToLowerBound * zoomFactor;
+						newUpperBound = xAxis.getUpperBound() - mouseXDiffToUpperBound * zoomFactor;
+					} else {
+						newLowerBound = xAxis.getLowerBound() - mouseXDiffToLowerBound * zoomFactor;
+						newUpperBound = xAxis.getUpperBound() + mouseXDiffToUpperBound * zoomFactor;
+					}
+					ChartUtils.setLowerXBoundWithinRange(chart, newLowerBound);
+					ChartUtils.setUpperXBoundWithinRange(chart, newUpperBound);
+				}
+			}
+
+		});
 	}
 
-	private Number getInterval() {
-		if (isIntervalCalculated())
-			return interval;
-		ObservableList<Series<Number, Number>> data = chart.getData();
-		if (data != null && data.size() >= 1 && data.get(0).getData().size() >= 2) {
-			interval = data.get(0).getData().get(1).getXValue().doubleValue()
-					- data.get(0).getData().get(0).getXValue().doubleValue();
-			return interval;
-		}
-		return 86400000l;
-	}
-
-	private boolean isIntervalCalculated() {
-		return interval.doubleValue() != 0;
-	}
-
-	private double[] sceneToChartValues(double sceneX, double sceneY) {
-		double xDataLenght = xAxis.getUpperBound() - xAxis.getLowerBound();
-		double yDataLenght = yAxis.getUpperBound() - yAxis.getLowerBound();
-		double xPixelLenght = xAxis.getWidth();
-		double yPixelLenght = yAxis.getHeight();
-
-		Point2D leftBottomChartPos = xAxis.localToScene(0, 0);
-		double xMinPixelCoord = leftBottomChartPos.getX();
-		double yMinPixelCoord = leftBottomChartPos.getY();
-
-		double chartXCoord = xAxis.getLowerBound() + ((sceneX - xMinPixelCoord) * xDataLenght / xPixelLenght);
-		double chartYcoord = yAxis.getLowerBound() + ((yMinPixelCoord - sceneY) * yDataLenght / yPixelLenght);
-		return new double[] { chartXCoord, chartYcoord };
-	}
-
-	private Dimension2D sceneToChartDistance(double sceneX, double sceneY) {
-		double xDataLenght = xAxis.getUpperBound() - xAxis.getLowerBound();
-		double yDataLenght = yAxis.getUpperBound() - yAxis.getLowerBound();
-		double xPixelLenght = xAxis.getWidth();
-		double yPixelLenght = yAxis.getHeight();
-
-		double chartXDistance = sceneX * xDataLenght / xPixelLenght;
-		double chartYDistance = sceneY * yDataLenght / yPixelLenght;
-		return new Dimension2D(chartXDistance, chartYDistance);
-	}
-
-	private void configureMouseModeAndCursor(MouseEvent event) {
-		if (event.isShortcutDown())
+	private void configureMouseModeAndCursorOnMousePress(MouseEvent event) {
+		if (!isInBounds(event.getX(), event.getY()))
+			mouseMode = MouseMode.NO_MODE;
+		else if (event.isShortcutDown())
 			mouseMode = MouseMode.PAN;
-		else
+		else if (event.getButton().equals(dragZoomBtn))
 			mouseMode = MouseMode.ZOOM;
+		else
+			mouseMode = MouseMode.NO_MODE;
 		storeLastCursor();
 		changeCursor();
+	}
+
+	private boolean isInBounds(double xScene, double yScene) {
+		double[] mousePositionOnChart = ChartUtils.sceneToChartValues(xScene, yScene, xAxis, yAxis);
+		if (mousePositionOnChart[0] < xAxis.getLowerBound())
+			return false;
+		if (mousePositionOnChart[0] > xAxis.getUpperBound())
+			return false;
+		if (mousePositionOnChart[1] < yAxis.getLowerBound())
+			return false;
+		if (mousePositionOnChart[1] > yAxis.getUpperBound())
+			return false;
+		return true;
 	}
 
 	private void storeLastCursor() {
@@ -297,27 +178,12 @@ public class XYChartConfigurator {
 
 	private void changeCursor() {
 		if (mouseMode == MouseMode.ZOOM) {
-			setChartCursor(Cursor.DEFAULT);
+			ChartUtils.setCursor(chart, Cursor.W_RESIZE);
 		} else if (mouseMode == MouseMode.PAN)
-			setChartCursor(Cursor.OPEN_HAND);
+			ChartUtils.setCursor(chart, Cursor.OPEN_HAND);
 	}
 
 	private void resetCursor() {
-		setChartCursor(previousCursor);
-	}
-
-	private void setAutoRanging(boolean isAutoRanging) {
-		if (axisConstraint == AxisConstraint.Both) {
-			xAxis.setAutoRanging(isAutoRanging);
-			yAxis.setAutoRanging(isAutoRanging);
-		} else if (axisConstraint == AxisConstraint.Horizontal)
-			xAxis.setAutoRanging(isAutoRanging);
-		else if (axisConstraint == AxisConstraint.Vertical)
-			yAxis.setAutoRanging(isAutoRanging);
-	}
-
-	private void setChartCursor(Cursor cursor) {
-		Pane chartPane = (Pane) ReflectionUtils.forceFieldCall(Chart.class, "chartContent", chart);
-		chartPane.setCursor(cursor);
+		ChartUtils.setCursor(chart, previousCursor);
 	}
 }

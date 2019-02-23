@@ -82,7 +82,6 @@ public class XYChartConfigurator {
 		chart.setOnMousePressed(new EventHandler<MouseEvent>() {
 			@Override
 			public void handle(MouseEvent mouseEvent) {
-				System.out.println(mouseEvent.getButton() + " pressed");
 				if (mouseEvent.getButton().equals(dragZoomAndPanBtn)) {
 					configureMouseModeAndCursorOnMousePress(mouseEvent);
 

@@ -60,7 +60,6 @@ public class DragZoomer {
 
 	public void onMouseRelease(MouseEvent mouseEvent) {
 		if (shouldZoom) {
-			System.out.println("released");
 			zoomRectangle.setVisible(false);
 
 			double newMouseX = mouseEvent.getSceneX();

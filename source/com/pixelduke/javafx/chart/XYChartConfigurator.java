@@ -23,7 +23,8 @@ public class XYChartConfigurator {
 	private Cursor previousCursor;
 
 	private DragZoomer dragZoomer;
-	private MouseButton dragZoomBtn = MouseButton.PRIMARY;
+	private MouseButton dragZoomAndPanBtn = MouseButton.PRIMARY;
+	private MouseButton stopDragZoomBtn = MouseButton.SECONDARY;
 
 	private Panner panner;
 
@@ -81,14 +82,18 @@ public class XYChartConfigurator {
 		chart.setOnMousePressed(new EventHandler<MouseEvent>() {
 			@Override
 			public void handle(MouseEvent mouseEvent) {
+				System.out.println(mouseEvent.getButton() + " pressed");
+				if (mouseEvent.getButton().equals(dragZoomAndPanBtn)) {
+					configureMouseModeAndCursorOnMousePress(mouseEvent);
 
-				configureMouseModeAndCursorOnMousePress(mouseEvent);
-
-				if (mouseMode == MouseMode.ZOOM)
-					dragZoomer.startDragZoom(mouseEvent);
-				else if (mouseMode == MouseMode.PAN)
-					panner.onMousePressed(mouseEvent);
-
+					if (mouseMode == MouseMode.ZOOM)
+						dragZoomer.startDragZoom(mouseEvent);
+					else if (mouseMode == MouseMode.PAN)
+						panner.onMousePressed(mouseEvent);
+				} else if (mouseEvent.getButton().equals(stopDragZoomBtn)) {
+					dragZoomer.stopZooming();
+					resetCursor();
+				}
 			}
 		});
 	}
@@ -100,7 +105,8 @@ public class XYChartConfigurator {
 				if (mouseMode == MouseMode.ZOOM) {
 					dragZoomer.onDrag(mouseEvent);
 				} else if (mouseMode == MouseMode.PAN) {
-					panner.onDrag(mouseEvent);
+					if (mouseEvent.getButton().equals(dragZoomAndPanBtn))
+						panner.onDrag(mouseEvent);
 				}
 			}
 		});
@@ -110,9 +116,11 @@ public class XYChartConfigurator {
 		chart.setOnMouseReleased(new EventHandler<MouseEvent>() {
 			@Override
 			public void handle(MouseEvent mouseEvent) {
-				resetCursor();
-				if (mouseMode == MouseMode.ZOOM) {
-					dragZoomer.onMouseRelease(mouseEvent);
+				if (mouseEvent.getButton().equals(dragZoomAndPanBtn)) {
+					resetCursor();
+					if (mouseMode == MouseMode.ZOOM) {
+						dragZoomer.onMouseRelease(mouseEvent);
+					}
 				}
 			}
 		});
@@ -132,7 +140,7 @@ public class XYChartConfigurator {
 			mouseMode = MouseMode.NO_MODE;
 		else if (event.isShortcutDown())
 			mouseMode = MouseMode.PAN;
-		else if (event.getButton().equals(dragZoomBtn))
+		else if (event.getButton().equals(dragZoomAndPanBtn))
 			mouseMode = MouseMode.ZOOM;
 		else
 			mouseMode = MouseMode.NO_MODE;

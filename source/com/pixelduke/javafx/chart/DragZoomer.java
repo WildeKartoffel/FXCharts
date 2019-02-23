@@ -12,6 +12,7 @@ public class DragZoomer {
 	private double initialMouseSceneX;
 	private double initialMouseSceneY;
 	private Rectangle zoomRectangle;
+	private boolean shouldZoom = false;
 
 	public DragZoomer(XYChartConfigurator xyChartConfigurator) {
 		this.config = xyChartConfigurator;
@@ -23,6 +24,7 @@ public class DragZoomer {
 	}
 
 	public void startDragZoom(MouseEvent mouseEvent) {
+		shouldZoom = true;
 		storeLastDragZoomPositions(mouseEvent);
 		zoomRectangle.setX(initialMouseX);
 		zoomRectangle.setY(
@@ -37,12 +39,13 @@ public class DragZoomer {
 	}
 
 	public void onDrag(MouseEvent mouseEvent) {
-		zoomRectangle.toFront();
-		zoomRectangle.setVisible(true);
+		if (shouldZoom) {
+			zoomRectangle.toFront();
+			zoomRectangle.setVisible(true);
 
-		zoomRectangle.setWidth(mouseEvent.getSceneX() - initialMouseSceneX);
-		zoomRectangle.setHeight(config.getYAxis().getHeight());
-
+			zoomRectangle.setWidth(mouseEvent.getSceneX() - initialMouseSceneX);
+			zoomRectangle.setHeight(config.getYAxis().getHeight());
+		}
 	}
 
 	public void zoomInHorizontally(double newMouseX, double newMouseY) {
@@ -56,16 +59,25 @@ public class DragZoomer {
 	}
 
 	public void onMouseRelease(MouseEvent mouseEvent) {
-		zoomRectangle.setVisible(false);
+		if (shouldZoom) {
+			System.out.println("released");
+			zoomRectangle.setVisible(false);
 
-		double newMouseX = mouseEvent.getSceneX();
-		double newMouseY = mouseEvent.getSceneY();
+			double newMouseX = mouseEvent.getSceneX();
+			double newMouseY = mouseEvent.getSceneY();
 
-		if (newMouseX < initialMouseSceneX) {
-			ChartUtils.zoomOutHorizontally(config.getChart());
-		} else if (newMouseX > initialMouseSceneX) {
-			zoomInHorizontally(newMouseX, newMouseY);
+			if (newMouseX < initialMouseSceneX) {
+				ChartUtils.zoomOutHorizontally(config.getChart());
+			} else if (newMouseX > initialMouseSceneX) {
+				zoomInHorizontally(newMouseX, newMouseY);
+			}
 		}
+		shouldZoom = false;
+	}
+
+	public void stopZooming() {
+		zoomRectangle.setVisible(false);
+		shouldZoom = false;
 	}
 
 	private void createZoomRectangle() {

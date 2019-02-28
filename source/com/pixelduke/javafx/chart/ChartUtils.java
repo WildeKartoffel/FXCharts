@@ -36,10 +36,12 @@ public class ChartUtils {
 		return 86400000l;
 	}
 
-	public static void zoomOutHorizontally(XYChart<Number, Number> chart) {
+	public static void zoomOutHorizontally(XYChart chart) {
 		ValueAxis xAxis = (ValueAxis) chart.getXAxis();
+
 		xAxis.setLowerBound(ChartUtils.getOldestX(chart).doubleValue());
 		xAxis.setUpperBound(ChartUtils.getLatestX(chart).doubleValue());
+
 	}
 
 	public static double[] sceneToChartValues(double sceneX, double sceneY, ValueAxis xAxis, ValueAxis yAxis) {
